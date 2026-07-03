@@ -1,20 +1,19 @@
 const express = require('express');
+const path = require('path');
 const slidingWindowRateLimiter = require('./rateLimiter');
 
 const app = express();
+app.set('trust proxy', true); // get real visitor IP behind Render's proxy
+
 const PORT = process.env.PORT || 3000;
 
-app.use(slidingWindowRateLimiter);
+app.use(express.static(path.join(__dirname, 'public')));
 
-app.get('/api/data', (req, res) => {
+app.get('/api/data', slidingWindowRateLimiter, (req, res) => {
   res.json({
     message: 'Here is your data!',
     timestamp: new Date().toISOString(),
   });
-});
-
-app.get('/', (req, res) => {
-  res.send('Rate limiter (Redis-backed) is running. Try GET /api/data');
 });
 
 app.listen(PORT, () => {

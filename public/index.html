@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Distributed Rate Limiter — Live Demo</title>
+<style>
+  :root {
+    --bg: #0a0e0c;
+    --panel: #101713;
+    --line: #1d2b24;
+    --text: #d7e4dc;
+    --dim: #6b8478;
+    --accent: #5eff9d;
+    --danger: #ff5e5e;
+    --mono: 'SF Mono', 'Consolas', 'Menlo', monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    min-height: 100vh;
+    padding: 48px 20px;
+  }
+
+  .wrap {
+    max-width: 720px;
+    margin: 0 auto;
+  }
+
+  .eyebrow {
+    color: var(--accent);
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+
+  h1 {
+    font-size: 28px;
+    margin: 0 0 8px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  .sub {
+    color: var(--dim);
+    font-size: 14px;
+    line-height: 1.6;
+    margin-bottom: 32px;
+    max-width: 560px;
+  }
+
+  .sub code {
+    color: var(--text);
+    background: var(--panel);
+    padding: 2px 6px;
+    border-radius: 3px;
+    border: 1px solid var(--line);
+  }
+
+  .config {
+    display: flex;
+    flex-wrap: wrap;
+    margin-bottom: 28px;
+    padding: 12px 16px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+  }
+
+  .config-item {
+    font-size: 12px;
+    color: var(--dim);
+    margin-right: 28px;
+  }
+
+  .config-item:last-child {
+    margin-right: 0;
+  }
+
+  .config-item strong {
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  button {
+    background: var(--accent);
+    color: #06120a;
+    border: none;
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 12px 20px;
+    border-radius: 4px;
+    cursor: pointer;
+    letter-spacing: 0.02em;
+  }
+
+  button:hover { opacity: 0.88; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .stop-btn {
+    background: transparent;
+    color: var(--dim);
+    border: 1px solid var(--line);
+    margin-left: 10px;
+  }
+
+  .counters {
+    display: flex;
+    margin: 28px 0 16px;
+  }
+
+  .counter {
+    flex: 1;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 14px 16px;
+    margin-right: 16px;
+  }
+
+  .counter:last-child {
+    margin-right: 0;
+  }
+
+  .counter .num {
+    font-size: 26px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .counter .label {
+    font-size: 11px;
+    color: var(--dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-top: 6px;
+  }
+
+  .counter.allowed .num { color: var(--accent); }
+  .counter.blocked .num { color: var(--danger); }
+  .counter.remaining .num { color: #f5c95e; }
+
+  .log {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    height: 280px;
+    overflow-y: auto;
+    padding: 12px 14px;
+    font-size: 12.5px;
+    line-height: 1.9;
+  }
+
+  .log-line {
+    display: flex;
+    border-bottom: 1px solid var(--line);
+    padding: 4px 0;
+  }
+
+  .log-line:last-child { border-bottom: none; }
+
+  .log-time { color: var(--dim); flex-shrink: 0; margin-right: 10px; }
+
+  .log-status {
+    flex-shrink: 0;
+    font-weight: 700;
+    width: 64px;
+    margin-right: 10px;
+  }
+
+  .log-status.ok { color: var(--accent); }
+  .log-status.blocked { color: var(--danger); }
+
+  .log-msg { color: var(--dim); }
+
+  .log-empty {
+    color: var(--dim);
+    text-align: center;
+    padding-top: 110px;
+  }
+
+  .footer {
+    margin-top: 28px;
+    font-size: 12px;
+    color: var(--dim);
+  }
+
+  .footer a { color: var(--accent); text-decoration: none; }
+  .footer a:hover { text-decoration: underline; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="eyebrow">// rate-limit-demo</div>
+    <h1>Distributed Rate Limiter</h1>
+    <p class="sub">
+      Every request below hits the live <code>/api/data</code> endpoint of a
+      deployed Express API. A sliding-window algorithm, backed by Redis,
+      decides whether to allow or block it — across however many server
+      instances are running.
+    </p>
+
+    <div class="config">
+      <div class="config-item">LIMIT <strong>10 requests</strong></div>
+      <div class="config-item">WINDOW <strong>60 seconds</strong></div>
+      <div class="config-item">STORE <strong>Redis (shared)</strong></div>
+    </div>
+
+    <button id="fireBtn">Fire requests</button>
+    <button id="stopBtn" class="stop-btn" disabled>Stop</button>
+
+    <div class="counters">
+      <div class="counter allowed">
+        <div class="num" id="okCount">0</div>
+        <div class="label">Allowed (200)</div>
+      </div>
+      <div class="counter blocked">
+        <div class="num" id="blockedCount">0</div>
+        <div class="label">Blocked (429)</div>
+      </div>
+      <div class="counter remaining">
+        <div class="num" id="remainingCount">—</div>
+        <div class="label">Requests left</div>
+      </div>
+    </div>
+
+    <div class="log" id="log">
+      <div class="log-empty">— no requests fired yet —</div>
+    </div>
+
+    <div class="footer">
+      <a href="https://github.com/Shubhidwivedii/distributed-rate-limiter" target="_blank">View source on GitHub</a>
+      &nbsp;·&nbsp; built with Node.js, Express, Redis
+    </div>
+  </div>
+
+  <script>
+    const fireBtn = document.getElementById('fireBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const logEl = document.getElementById('log');
+    const okCountEl = document.getElementById('okCount');
+    const blockedCountEl = document.getElementById('blockedCount');
+    const remainingCountEl = document.getElementById('remainingCount');
+
+    let okCount = 0;
+    let blockedCount = 0;
+    let intervalId = null;
+    let firstRequest = true;
+
+    function addLogLine(status, ok) {
+      if (firstRequest) {
+        logEl.innerHTML = '';
+        firstRequest = false;
+      }
+      const time = new Date().toLocaleTimeString();
+      const line = document.createElement('div');
+      line.className = 'log-line';
+      line.innerHTML = `
+        <span class="log-time">${time}</span>
+        <span class="log-status ${ok ? 'ok' : 'blocked'}">${status}</span>
+        <span class="log-msg">${ok ? 'request allowed' : 'rate limit exceeded'}</span>
+      `;
+      logEl.prepend(line);
+    }
+
+    async function fireOne() {
+      try {
+        const res = await fetch('/api/data');
+
+        const remaining = res.headers.get('X-RateLimit-Remaining');
+        if (remaining !== null) {
+          remainingCountEl.textContent = remaining;
+        }
+
+        if (res.status === 200) {
+          okCount++;
+          okCountEl.textContent = okCount;
+          addLogLine('200 OK', true);
+        } else {
+          blockedCount++;
+          blockedCountEl.textContent = blockedCount;
+          addLogLine('429', false);
+        }
+      } catch (err) {
+        addLogLine('ERR', false);
+      }
+    }
+
+    fireBtn.addEventListener('click', () => {
+      fireBtn.disabled = true;
+      stopBtn.disabled = false;
+      intervalId = setInterval(fireOne, 300);
+      fireOne();
+    });
+
+    stopBtn.addEventListener('click', () => {
+      clearInterval(intervalId);
+      fireBtn.disabled = false;
+      stopBtn.disabled = true;
+    });
+  </script>
+</body>
+</html>
